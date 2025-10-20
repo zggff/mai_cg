@@ -606,16 +606,6 @@ void update(double time) {
 }
 
 void drawCone(VkCommandBuffer &cmd, float scale_v, Vector bottom_color, Vector position, Vector rotation_axis, Vector initial_rotation, float initial_rotation_v) {
-    // NOTE: Use our new shiny graphics pipeline
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-
-    // NOTE: Use our quad vertex buffer
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer.buffer, &offset);
-
-    // NOTE: Use our quad index buffer
-    vkCmdBindIndexBuffer(cmd, index_buffer.buffer, offset, VK_INDEX_TYPE_UINT32);
     ShaderConstants constants{
 			.projection = projection(
 				camera_fov,
@@ -683,6 +673,17 @@ void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
 	// TODO: Vulkan rendering code here
 	// NOTE: ShaderConstant updates, vkCmdXXX expected to be here
 	{
+        // NOTE: Use our new shiny graphics pipeline
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+        // NOTE: Use our quad vertex buffer
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer.buffer, &offset);
+
+        // NOTE: Use our quad index buffer
+        vkCmdBindIndexBuffer(cmd, index_buffer.buffer, offset, VK_INDEX_TYPE_UINT32);
+
+
         drawCone(cmd, 1, {0.0, 0.8, 0.6}, {2, 0, 5}, {0, 1, 0}, {1, 1, 1}, M_PI);
         drawCone(cmd, 0.9, {0.9, 0.8, 0.1}, {0, 2, 5}, {0, 0, 1}, {1, 0, 0}, 0);
         drawCone(cmd, 0.5, {0.9, 0.0, 1.0}, {-1, 0, 3}, {1, 0, 0}, {1, 1, 0}, M_PI/8);
