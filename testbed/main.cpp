@@ -56,8 +56,12 @@ VkPipeline pipeline;
 VulkanBuffer vertex_buffer;
 VulkanBuffer index_buffer;
 
-float model_rotation = 0;
-float model_rotation_speed = 0.5;
+float rotation1 = 0;
+float rotation2 = 0;
+float rotation3 = 0;
+float rotation_speed1 = 0.5;
+float rotation_speed2 = 0.5;
+float rotation_speed3 = 0.5;
 bool pause = true;
 bool reverse = false;
 
@@ -579,33 +583,50 @@ double time_prev;
 
 void update(double time) {
     ImGui::Begin("Controls:");
-	ImGui::SliderFloat("RotationSpeed", &model_rotation_speed, 0.0f, 2.0f);
+	ImGui::SliderFloat("Green", &rotation_speed1, 0.0f, 2.0f);
+	ImGui::SliderFloat("Yellow", &rotation_speed2, 0.0f, 2.0f);
+	ImGui::SliderFloat("Magenta", &rotation_speed3, 0.0f, 2.0f);
     ImGui::Checkbox("Pause", &pause);
     ImGui::Checkbox("Reverse", &reverse);
     if (ImGui::IsKeyPressed(ImGuiKey_Space)) 
         pause = !pause;
-    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) 
-        model_rotation_speed = std::max(0.0, model_rotation_speed - 0.1);
-    if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) 
-        model_rotation_speed = std::min(2.0, model_rotation_speed + 0.1);
     if (ImGui::IsKeyPressed(ImGuiKey_RightCtrl)) 
         reverse = !reverse;
 
     ImGui::End();
 
 
-    int coef = reverse ? -1 : 1;
-    float speed = model_rotation_speed * M_PI * 2;
+    int rev = reverse ? -1 : 1;
+    float coef = rev * M_PI * 2;
     float delta = time - time_prev;
+    float speed1 = rotation_speed1 * coef;
+    float speed2 = rotation_speed2 * coef;
+    float speed3 = rotation_speed3 * coef;
 
-    if (!pause)
-        model_rotation += coef * delta * speed;
+    if (!pause) {
+        rotation1 += delta * speed1;
+        rotation2 += delta * speed2;
+        rotation3 += delta * speed3;
+
+    }
     time_prev = time;
 
-	model_rotation = fmodf(model_rotation, 2.0f * M_PI);
+	rotation1 = fmodf(rotation1, 2.0f * M_PI);
+	rotation2 = fmodf(rotation2, 2.0f * M_PI);
+	rotation3 = fmodf(rotation3, 2.0f * M_PI);
 }
 
-void drawCone(VkCommandBuffer &cmd, float scale_v, Vector bottom_color, Vector position, Vector rotation_axis, Vector initial_rotation, float initial_rotation_v) {
+void drawCone(VkCommandBuffer &cmd, float scale_v, Vector bottom_color, Vector position, Vector rotation_axis, Vector initial_rotation, float initial_rotation_v, float rotation_val) {
+    // NOTE: Use our new shiny graphics pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    // NOTE: Use our quad vertex buffer
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer.buffer, &offset);
+
+    // NOTE: Use our quad index buffer
+    vkCmdBindIndexBuffer(cmd, index_buffer.buffer, offset, VK_INDEX_TYPE_UINT32);
+
     ShaderConstants constants{
 			.projection = projection(
 				camera_fov,
@@ -613,7 +634,7 @@ void drawCone(VkCommandBuffer &cmd, float scale_v, Vector bottom_color, Vector p
 				camera_near_plane, camera_far_plane),
 
 			.transform = multiply(
-                            rotation(rotation_axis, model_rotation), 
+                            rotation(rotation_axis, rotation_val), 
                             multiply(
                                 rotation(initial_rotation, initial_rotation_v),
                                 multiply(
@@ -673,20 +694,9 @@ void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
 	// TODO: Vulkan rendering code here
 	// NOTE: ShaderConstant updates, vkCmdXXX expected to be here
 	{
-        // NOTE: Use our new shiny graphics pipeline
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-        // NOTE: Use our quad vertex buffer
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer.buffer, &offset);
-
-        // NOTE: Use our quad index buffer
-        vkCmdBindIndexBuffer(cmd, index_buffer.buffer, offset, VK_INDEX_TYPE_UINT32);
-
-
-        drawCone(cmd, 1, {0.0, 0.8, 0.6}, {2, 0, 5}, {0, 1, 0}, {1, 1, 1}, M_PI);
-        drawCone(cmd, 0.9, {0.9, 0.8, 0.1}, {0, 2, 5}, {0, 0, 1}, {1, 0, 0}, 0);
-        drawCone(cmd, 0.5, {0.9, 0.0, 1.0}, {-1, 0, 3}, {1, 0, 0}, {1, 1, 0}, M_PI/8);
+        drawCone(cmd, 1, {0.0, 0.8, 0.6}, {2, 0, 5}, {0, 1, 0}, {1, 1, 1}, M_PI, rotation1);
+        drawCone(cmd, 0.9, {0.9, 0.8, 0.1}, {0, 2, 5}, {0, 0, 1}, {1, 0, 0}, 0, rotation2);
+        drawCone(cmd, 0.5, {0.9, 0.0, 1.0}, {-1, 0, 3}, {1, 0, 0}, {1, 1, 0}, M_PI/8, rotation3);
 	}
 
 	vkCmdEndRenderPass(cmd);
