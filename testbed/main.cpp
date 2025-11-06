@@ -154,31 +154,28 @@ void Camera::rotate(veekay::vec2 rotation) {
 
 veekay::mat4 Camera::look_at() const {
     using namespace veekay;
-    // float3 forward = from - to; 
-    // normalize(forward); 
-    // this->rotation
-    auto eye = this->position;
-    auto to = this->position + this->rotation;
-    // auto to = vec3({0.0, 0.0, 6.0});
-    auto up = vec3({0.0, -1.0, 0.0});
-    auto zaxis = vec3::normalized(eye - to);
-    auto xaxis = vec3::normalized(vec3::cross(up, zaxis));
-    auto yaxis = vec3::cross(zaxis, xaxis);
+    auto f = vec3({cos(pitch)*sin(yaw), -sin(pitch), cos(pitch) * cos(yaw)});
+    auto worldUp = vec3({0.0, 1.0, 0.0});
+    auto r = vec3::normalized(vec3::cross(worldUp, f));
+    auto u = vec3::cross(f, r);
 
     auto m = mat4({
-        {xaxis.x, yaxis.x, zaxis.x, 0},
-        {xaxis.y, yaxis.y, zaxis.z, 0},
-        {xaxis.z, yaxis.z, zaxis.z, 0},
-        {-vec3::dot(xaxis, eye), -vec3::dot(yaxis, eye), -vec3::dot(zaxis, eye), 1}
+        {r.x, u.x, f.x, 0},
+        {r.y, u.y, f.y, 0},
+        {r.z, u.z, f.z, 0},
+        {-vec3::dot(r, position), -vec3::dot(u, position), -vec3::dot(f, position), 1}
     });
 
- 
 	return m;
 }
 
+bool useLookAt = true;
+
 veekay::mat4 Camera::view_projection(float aspect_ratio) const {
 	auto projection = veekay::mat4::projection(fov, aspect_ratio, near_plane, far_plane);
-    // return look_at() * projection;
+    if (useLookAt) {
+        return look_at() * projection;
+    }
 	return view() * projection;
 }
 
@@ -690,6 +687,7 @@ void shutdown() {
 
 void update(double time) {
 	ImGui::Begin("Controls:");
+    ImGui::Checkbox("use look at for camera", &useLookAt);
 	ImGui::End();
 
 	if (!ImGui::IsWindowHovered()) {
@@ -699,16 +697,8 @@ void update(double time) {
 			auto move_delta = mouse::cursorDelta();
             camera.rotate(move_delta);
 
-            
-			// TODO: Use mouse_delta to update camera rotation
-			
-			auto view = camera.view();
+			auto view = useLookAt ? camera.look_at() : camera.view();
 
-			// TODO: Calculate right, up and front from view matrix
-            
-			// veekay::vec3 right = {1.0f, 0.0f, 0.0f};
-			// veekay::vec3 up = {0.0f, -1.0f, 0.0f};
-			// veekay::vec3 front = {0.0f, 0.0f, 1.0f};
 			veekay::vec3 right = {view[0][0], view[1][0], view[2][0]};
 			veekay::vec3 up = {view[0][1], view[1][1], view[2][1]};
 			veekay::vec3 front = {view[0][2], view[1][2], view[2][2]};
