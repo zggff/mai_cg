@@ -1,3 +1,4 @@
+#include "veekay/types.hpp"
 #include <cstdint>
 #include <climits>
 #include <cstring>
@@ -11,6 +12,10 @@
 #include <vulkan/vulkan_core.h>
 #include <imgui.h>
 #include <lodepng.h>
+
+/*
+Матрица камеры рассчитывается с помощью матрицы Look-At. Должны быть реализованы следующие компоненты освещения: рассеянное, направленное и точечные источники света. Точечные источники света должны терять свою интенсивность по закону обратных квадратов
+*/
 
 namespace {
 
@@ -57,6 +62,7 @@ struct Camera {
 	constexpr static float default_fov = 60.0f;
 	constexpr static float default_near_plane = 0.01f;
 	constexpr static float default_far_plane = 100.0f;
+    constexpr static float mouse_sensitivity = 0.003;
 
 	veekay::vec3 position = {};
 	veekay::vec3 rotation = {};
@@ -65,11 +71,16 @@ struct Camera {
 	float near_plane = default_near_plane;
 	float far_plane = default_far_plane;
 
+    float pitch;
+    float yaw;
+
 	// NOTE: View matrix of camera (inverse of a transform)
+    void rotate(veekay::vec2 rotation);
 	veekay::mat4 view() const;
 
 	// NOTE: View and projection composition
 	veekay::mat4 view_projection(float aspect_ratio) const;
+	veekay::mat4 look_at() const;
 };
 
 // NOTE: Scene objects
@@ -113,6 +124,7 @@ float toRadians(float degrees) {
 veekay::mat4 Transform::matrix() const {
 	// TODO: Scaling and rotation
 
+    // auto r = veekay::mat4::rotation({})
 	auto t = veekay::mat4::translation(position);
 
 	return t;
@@ -120,15 +132,53 @@ veekay::mat4 Transform::matrix() const {
 
 veekay::mat4 Camera::view() const {
 	// TODO: Rotation
+    using namespace veekay;
+
+    auto rotation_y = mat4::rotation({0.0, 1.0, 0.0}, yaw);
+    auto rotation_x = mat4::rotation({1.0, 0.0, 0.0}, pitch);
 
 	auto t = veekay::mat4::translation(-position);
 
-	return t;
+    auto r = rotation_x * rotation_y;
+
+	return t * mat4::transpose(r);
+}
+
+void Camera::rotate(veekay::vec2 rotation) {
+    yaw += rotation.x * mouse_sensitivity;
+    pitch += rotation.y * mouse_sensitivity;
+    float max_pitch = M_PI / 2 * 0.99;
+    pitch = std::min(std::max(pitch, -max_pitch), max_pitch);
+}
+
+
+veekay::mat4 Camera::look_at() const {
+    using namespace veekay;
+    // float3 forward = from - to; 
+    // normalize(forward); 
+    // this->rotation
+    auto eye = this->position;
+    auto to = this->position + this->rotation;
+    // auto to = vec3({0.0, 0.0, 6.0});
+    auto up = vec3({0.0, -1.0, 0.0});
+    auto zaxis = vec3::normalized(eye - to);
+    auto xaxis = vec3::normalized(vec3::cross(up, zaxis));
+    auto yaxis = vec3::cross(zaxis, xaxis);
+
+    auto m = mat4({
+        {xaxis.x, yaxis.x, zaxis.x, 0},
+        {xaxis.y, yaxis.y, zaxis.z, 0},
+        {xaxis.z, yaxis.z, zaxis.z, 0},
+        {-vec3::dot(xaxis, eye), -vec3::dot(yaxis, eye), -vec3::dot(zaxis, eye), 1}
+    });
+
+ 
+	return m;
 }
 
 veekay::mat4 Camera::view_projection(float aspect_ratio) const {
 	auto projection = veekay::mat4::projection(fov, aspect_ratio, near_plane, far_plane);
-
+    // return look_at() * projection;
 	return view() * projection;
 }
 
@@ -647,15 +697,21 @@ void update(double time) {
 
 		if (mouse::isButtonDown(mouse::Button::left)) {
 			auto move_delta = mouse::cursorDelta();
+            camera.rotate(move_delta);
 
+            
 			// TODO: Use mouse_delta to update camera rotation
 			
 			auto view = camera.view();
 
 			// TODO: Calculate right, up and front from view matrix
-			veekay::vec3 right = {1.0f, 0.0f, 0.0f};
-			veekay::vec3 up = {0.0f, -1.0f, 0.0f};
-			veekay::vec3 front = {0.0f, 0.0f, 1.0f};
+            
+			// veekay::vec3 right = {1.0f, 0.0f, 0.0f};
+			// veekay::vec3 up = {0.0f, -1.0f, 0.0f};
+			// veekay::vec3 front = {0.0f, 0.0f, 1.0f};
+			veekay::vec3 right = {view[0][0], view[1][0], view[2][0]};
+			veekay::vec3 up = {view[0][1], view[1][1], view[2][1]};
+			veekay::vec3 front = {view[0][2], view[1][2], view[2][2]};
 
 			if (keyboard::isKeyDown(keyboard::Key::w))
 				camera.position += front * 0.1f;
