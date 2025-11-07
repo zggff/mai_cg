@@ -28,13 +28,24 @@ struct Vertex {
 	// NOTE: You can add more attributes
 };
 
+using veekay::vec2, veekay::vec3, veekay::mat4;
+
 struct SceneUniforms {
-	veekay::mat4 view_projection;
+	mat4 view_projection;
+    vec3 view_position; float _pad0;
+    vec3 ambient_color; float _pad1;
+	vec3 sun_direction; float _pad2;
+	vec3 sun_color; float _pad3;
+    float ambient_intensity;
+    uint32_t point_lights_count;
+	uint32_t spot_lights_count; 
+    float _pad4;
 };
 
 struct ModelUniforms {
-	veekay::mat4 model;
-	veekay::vec3 albedo_color; float _pad0;
+	mat4 model;
+	vec3 color; float _pad0;
+	float shininess;
 };
 
 struct Mesh {
@@ -55,7 +66,8 @@ struct Transform {
 struct Model {
 	Mesh mesh;
 	Transform transform;
-	veekay::vec3 albedo_color;
+	vec3 color;
+    float shininess;
 };
 
 struct Camera {
@@ -83,6 +95,21 @@ struct Camera {
 	veekay::mat4 look_at() const;
 };
 
+struct PointLight {
+	veekay::vec3 position;
+	float radius;
+	veekay::vec3 color; float _pad0;
+};
+
+struct SpotLight {
+	veekay::vec3 position;
+	float radius;
+	veekay::vec3 direction;
+	float angle; // Косинус угла
+    veekay::vec3 color; float _pad0;
+};
+
+
 // NOTE: Scene objects
 inline namespace {
 	Camera camera{
@@ -90,6 +117,8 @@ inline namespace {
 	};
 
 	std::vector<Model> models;
+    std::vector<PointLight> point_lights;
+    std::vector<SpotLight> spot_lights;
 }
 
 // NOTE: Vulkan objects
@@ -106,9 +135,16 @@ inline namespace {
 
 	veekay::graphics::Buffer* scene_uniforms_buffer;
 	veekay::graphics::Buffer* model_uniforms_buffer;
+    constexpr uint32_t max_point_lights = 16;
+    constexpr uint32_t max_spot_lights = 16;
+
+    veekay::graphics::Buffer* point_lights_buffer; 
+    veekay::graphics::Buffer* spot_lights_buffer; 
+
 
 	Mesh plane_mesh;
 	Mesh cube_mesh;
+	Mesh sphere_mesh;
 
 	veekay::graphics::Texture* missing_texture;
 	VkSampler missing_texture_sampler;
@@ -146,7 +182,7 @@ veekay::mat4 Camera::view() const {
 
 void Camera::rotate(veekay::vec2 rotation) {
     yaw += rotation.x * mouse_sensitivity;
-    pitch += rotation.y * mouse_sensitivity;
+    pitch -= rotation.y * mouse_sensitivity;
     float max_pitch = M_PI / 2 * 0.99;
     pitch = std::min(std::max(pitch, -max_pitch), max_pitch);
 }
@@ -370,7 +406,11 @@ void initialize(VkCommandBuffer cmd) {
 				{
 					.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 					.descriptorCount = 8,
-				}
+				},
+                {
+                    .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .descriptorCount = 8,
+                }
 			};
 			
 			VkDescriptorPoolCreateInfo info{
@@ -403,6 +443,18 @@ void initialize(VkCommandBuffer cmd) {
 					.descriptorCount = 1,
 					.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 				},
+                {
+                    .binding = 2,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .descriptorCount = 1,
+                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+                },
+                {
+                    .binding = 3,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .descriptorCount = 1,
+                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+                },
 			};
 
 			VkDescriptorSetLayoutCreateInfo info{
@@ -482,6 +534,16 @@ void initialize(VkCommandBuffer cmd) {
 		max_models * veekay::graphics::Buffer::structureAlignment(sizeof(ModelUniforms)),
 		nullptr,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    point_lights_buffer = new veekay::graphics::Buffer(
+                max_point_lights * sizeof(PointLight), 
+                nullptr,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    spot_lights_buffer = new veekay::graphics::Buffer(
+                max_spot_lights * sizeof(SpotLight), 
+                nullptr,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
 
 	// NOTE: This texture and sampler is used when texture could not be loaded
 	{
@@ -518,6 +580,14 @@ void initialize(VkCommandBuffer cmd) {
 				.offset = 0,
 				.range = sizeof(ModelUniforms),
 			},
+            {
+                .buffer = point_lights_buffer->buffer,
+                .range = max_point_lights * sizeof(PointLight),
+            },
+            {
+                .buffer = spot_lights_buffer->buffer,
+                .range = max_spot_lights * sizeof(SpotLight),
+            },
 		};
 
 		VkWriteDescriptorSet write_infos[] = {
@@ -539,6 +609,27 @@ void initialize(VkCommandBuffer cmd) {
 				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 				.pBufferInfo = &buffer_infos[1],
 			},
+            {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptor_set,
+				.dstBinding = 2,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				.pBufferInfo = &buffer_infos[2],
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptor_set,
+				.dstBinding = 3,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				.pBufferInfo = &buffer_infos[2],
+
+            },
+
+
 		};
 
 		vkUpdateDescriptorSets(device, sizeof(write_infos) / sizeof(write_infos[0]),
@@ -627,36 +718,88 @@ void initialize(VkCommandBuffer cmd) {
 
 		cube_mesh.indices = uint32_t(indices.size());
 	}
+    {
+		std::vector<Vertex> vertices;
+		std::vector<uint32_t> indices;
+		const int stackCount = 10;
+		const int sectorCount = 10;
+		const float radius = 1.0;
+
+		for (int i = 0; i <= stackCount; ++i) {
+			float stackAngle = M_PI / 2 - i * M_PI / stackCount; // from pi/2 to -pi/2
+			float xy = radius * cosf(stackAngle);
+			float y = radius * sinf(stackAngle);
+
+			for (int j = 0; j <= sectorCount; ++j) {
+				float sectorAngle = j * 2 * M_PI / sectorCount; // from 0 to 2pi
+
+				float x = xy * cosf(sectorAngle);
+				float z = xy * sinf(sectorAngle);
+
+				vec3 pos({x, y, z});
+				vec3 normal = vec3::normalized(pos);
+				vec2 uv({(float)j / sectorCount, (float)i / stackCount});
+
+				vertices.push_back({ pos, normal, uv });
+			}
+		}
+
+		// Indices
+		for (int i = 0; i < stackCount; ++i) {
+			int k1 = i * (sectorCount + 1);
+			int k2 = k1 + sectorCount + 1;
+
+			for (int j = 0; j < sectorCount; ++j, ++k1, ++k2) {
+				if (i != 0) {
+					indices.push_back(k1);      // triangle 1
+					indices.push_back(k2);
+					indices.push_back(k1 + 1);
+				}
+
+				if (i != (stackCount-1)) {
+					indices.push_back(k1 + 1);  // triangle 2
+					indices.push_back(k2);
+					indices.push_back(k2 + 1);
+				}
+			}
+		}
+		sphere_mesh.vertex_buffer = new veekay::graphics::Buffer(
+			vertices.size() * sizeof(Vertex), vertices.data(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+		sphere_mesh.index_buffer = new veekay::graphics::Buffer(
+			indices.size() * sizeof(uint32_t), indices.data(),
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+		sphere_mesh.indices = uint32_t(indices.size());
+
+    }
 
 	// NOTE: Add models to scene
 	models.emplace_back(Model{
 		.mesh = plane_mesh,
-		.transform = Transform{},
-		.albedo_color = veekay::vec3{1.0f, 1.0f, 1.0f}
+		.transform = Transform{
+            .position = {0.0, 1.0, 0.0}
+        },
+		.color = veekay::vec3{0.5f, 0.5f, 0.5f},
+        .shininess = 0.5,
 	});
 
 	models.emplace_back(Model{
 		.mesh = cube_mesh,
 		.transform = Transform{
-			.position = {-2.0f, -0.5f, -1.5f},
+			.position = {-1.0f, 0.5f, 0.5f},
 		},
-		.albedo_color = veekay::vec3{1.0f, 0.0f, 0.0f}
+		.color = veekay::vec3{1.0f, 0.0f, 0.0f},
+        .shininess = 0.0,
 	});
-
 	models.emplace_back(Model{
-		.mesh = cube_mesh,
+		.mesh = sphere_mesh,
 		.transform = Transform{
-			.position = {1.5f, -0.5f, -0.5f},
+			.position = {1.0f, 0.5f, 0.5f},
 		},
-		.albedo_color = veekay::vec3{0.0f, 1.0f, 0.0f}
-	});
-
-	models.emplace_back(Model{
-		.mesh = cube_mesh,
-		.transform = Transform{
-			.position = {0.0f, -0.5f, 1.0f},
-		},
-		.albedo_color = veekay::vec3{0.0f, 0.0f, 1.0f}
+		.color = veekay::vec3{0.0f, 0.0f, 1.0f},
+        .shininess = 0.0,
 	});
 }
 
@@ -675,6 +818,8 @@ void shutdown() {
 
 	delete model_uniforms_buffer;
 	delete scene_uniforms_buffer;
+    delete spot_lights_buffer;
+    delete point_lights_buffer;
 
 	vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
 	vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
@@ -715,17 +860,24 @@ void update(double time) {
 			if (keyboard::isKeyDown(keyboard::Key::a))
 				camera.position -= right * 0.1f;
 
-			if (keyboard::isKeyDown(keyboard::Key::q))
-				camera.position += up * 0.1f;
-
-			if (keyboard::isKeyDown(keyboard::Key::z))
+			if (keyboard::isKeyDown(keyboard::Key::space))
 				camera.position -= up * 0.1f;
+
+			if (keyboard::isKeyDown(keyboard::Key::left_shift))
+				camera.position += up * 0.1f;
 		}
 	}
 
 	float aspect_ratio = float(veekay::app.window_width) / float(veekay::app.window_height);
 	SceneUniforms scene_uniforms{
 		.view_projection = camera.view_projection(aspect_ratio),
+        .view_position = camera.position,
+        .ambient_color = {0.5, 0.5, 0.5},
+        .ambient_intensity = 0.5,
+        .sun_color = {1.0, 0.9, 0.9},
+        .sun_direction = {0.0, 1.0, 1.0},
+        .point_lights_count = 0,
+        .spot_lights_count = 0,
 	};
 
 	std::vector<ModelUniforms> model_uniforms(models.size());
@@ -734,10 +886,13 @@ void update(double time) {
 		ModelUniforms& uniforms = model_uniforms[i];
 
 		uniforms.model = model.transform.matrix();
-		uniforms.albedo_color = model.albedo_color;
+        uniforms.shininess = model.shininess;
+        uniforms.color = model.color;
 	}
 
 	*(SceneUniforms*)scene_uniforms_buffer->mapped_region = scene_uniforms;
+	std::vector<SpotLight> spot_lights_uniforms(spot_lights.size());
+	std::vector<PointLight> point_lights_uniforms(point_lights.size());
 
 	const size_t alignment =
 		veekay::graphics::Buffer::structureAlignment(sizeof(ModelUniforms));

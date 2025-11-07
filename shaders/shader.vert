@@ -9,7 +9,13 @@ layout (location = 1) out vec3 f_normal;
 layout (location = 2) out vec2 f_uv;
 
 layout (binding = 0, std140) uniform SceneUniforms {
-	mat4 view_projection;
+    mat4 view_projection;
+    vec3 view_position;
+	vec3 ambient_light_intensity;
+	vec3 sun_light_direction;
+	vec3 sun_light_color;
+    uint point_light_count;
+	uint spot_light_count;
 };
 
 layout (binding = 1, std140) uniform ModelUniforms {
