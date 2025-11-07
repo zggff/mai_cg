@@ -721,42 +721,41 @@ void initialize(VkCommandBuffer cmd) {
     {
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
-		const int stackCount = 10;
-		const int sectorCount = 10;
+		const int vertex_cnt = 100;
 		const float radius = 1.0;
 
-		for (int i = 0; i <= stackCount; ++i) {
-			float stackAngle = M_PI / 2 - i * M_PI / stackCount; // from pi/2 to -pi/2
+		for (int i = 0; i <= vertex_cnt; ++i) {
+			float stackAngle = M_PI / 2 - i * M_PI / vertex_cnt; // from pi/2 to -pi/2
 			float xy = radius * cosf(stackAngle);
 			float y = radius * sinf(stackAngle);
 
-			for (int j = 0; j <= sectorCount; ++j) {
-				float sectorAngle = j * 2 * M_PI / sectorCount; // from 0 to 2pi
+			for (int j = 0; j <= vertex_cnt; ++j) {
+				float sectorAngle = j * 2 * M_PI / vertex_cnt; // from 0 to 2pi
 
 				float x = xy * cosf(sectorAngle);
 				float z = xy * sinf(sectorAngle);
 
 				vec3 pos({x, y, z});
 				vec3 normal = vec3::normalized(pos);
-				vec2 uv({(float)j / sectorCount, (float)i / stackCount});
+				vec2 uv({(float)j / vertex_cnt, (float)i / vertex_cnt});
 
 				vertices.push_back({ pos, normal, uv });
 			}
 		}
 
 		// Indices
-		for (int i = 0; i < stackCount; ++i) {
-			int k1 = i * (sectorCount + 1);
-			int k2 = k1 + sectorCount + 1;
+		for (int i = 0; i < vertex_cnt; ++i) {
+			int k1 = i * (vertex_cnt + 1);
+			int k2 = k1 + vertex_cnt + 1;
 
-			for (int j = 0; j < sectorCount; ++j, ++k1, ++k2) {
+			for (int j = 0; j < vertex_cnt; ++j, ++k1, ++k2) {
 				if (i != 0) {
 					indices.push_back(k1);      // triangle 1
 					indices.push_back(k2);
 					indices.push_back(k1 + 1);
 				}
 
-				if (i != (stackCount-1)) {
+				if (i != (vertex_cnt-1)) {
 					indices.push_back(k1 + 1);  // triangle 2
 					indices.push_back(k2);
 					indices.push_back(k2 + 1);
@@ -796,7 +795,7 @@ void initialize(VkCommandBuffer cmd) {
 	models.emplace_back(Model{
 		.mesh = sphere_mesh,
 		.transform = Transform{
-			.position = {1.0f, 0.5f, 0.5f},
+			.position = {1.0f, 0.0f, 0.5f},
 		},
 		.color = veekay::vec3{0.0f, 0.0f, 1.0f},
         .shininess = 0.0,
@@ -875,7 +874,7 @@ void update(double time) {
         .ambient_color = {0.5, 0.5, 0.5},
         .ambient_intensity = 0.5,
         .sun_color = {1.0, 0.9, 0.9},
-        .sun_direction = {0.0, 1.0, 1.0},
+        .sun_direction = {0.0, 1.0, 0.5},
         .point_lights_count = 0,
         .spot_lights_count = 0,
 	};
