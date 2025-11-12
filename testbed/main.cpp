@@ -95,6 +95,7 @@ struct Camera {
 	// NOTE: View and projection composition
 	veekay::mat4 view_projection(float aspect_ratio) const;
 	veekay::mat4 look_at() const;
+	veekay::vec3 front() const;
 };
 
 struct PointLight {
@@ -190,6 +191,11 @@ void Camera::rotate(veekay::vec2 rotation) {
     pitch = std::min(std::max(pitch, -max_pitch), max_pitch);
 }
 
+veekay::vec3 Camera::front() const {
+	mat4 view = this->view();
+	vec3 front = {view[0][2], view[1][2], view[2][2]};
+	return front;
+}
 
 veekay::mat4 Camera::look_at() const {
     using namespace veekay;
@@ -789,8 +795,8 @@ void initialize(VkCommandBuffer cmd) {
 		.transform = Transform{
             .position = {0.0, 1.0, 0.0}
         },
-		.color = veekay::vec3{0.5f, 0.5f, 0.5f},
-        .shininess = 0.5,
+		.color = veekay::vec3{0.0f, 0.0f, 0.0f},
+        .shininess = 0.1,
 	});
 
 	models.emplace_back(Model{
@@ -831,6 +837,12 @@ void initialize(VkCommandBuffer cmd) {
 		),
 		.direction = {-2, 0, -2},
 		.angle = static_cast<float>(std::cos(M_PI/4)),
+	});
+
+	spot_lights.push_back(SpotLight {
+		.color = vec3({1.0, 1.0, 0.0}),
+		.intensity = 20,
+		.angle = static_cast<float>(std::cos(M_PI/16)),
 	});
 
 	models.emplace_back(Model{
@@ -890,11 +902,10 @@ void shutdown() {
 	vkDestroyShaderModule(device, vertex_shader_module, nullptr);
 }
 
-
 void update(double time) {
 	ImGui::Begin("Controls:");
     ImGui::Checkbox("use look at for camera", &useLookAt);
-    ImGui::SliderAngle("angle", &angle);
+    // ImGui::SliderAngle("angle", &angle);
     ImGui::SliderFloat("radius", &radius, 1, 10);
 	ImGui::End();
 
@@ -935,25 +946,27 @@ void update(double time) {
 	SceneUniforms scene_uniforms{
 		.view_projection = camera.view_projection(aspect_ratio),
         .view_position = camera.position,
-        .ambient_color = {0.5, 0.5, 0.5},
-        .ambient_intensity = 0.5,
-        .sun_color = {1.0, 0.9, 0.9},
+        .ambient_color = {0.1, 0.1, 0.1},
+        .ambient_intensity = 0.1,
+        .sun_color = {1.0, 1.0, 1.0},
         .sun_direction = {0.0, 1.0, 0.5},
         .point_lights_count = (uint32_t )point_lights.size(),
         .spot_lights_count = (uint32_t ) spot_lights.size(),
 	};
 
 	{
-		models.back().transform.position =  {
-				float(0.0 + radius * std::sin(angle)),
+		models[4].transform.position =  {
+				float(0.0 + radius * std::sin(time)),
 				-2, 
-				float(0.0 + radius * std::cos(angle))
+				float(0.0 + radius * std::cos(time))
 		};
-		point_lights.back().position =  {
-				float(0.0 + radius * std::sin(angle)),
+		point_lights[0].position =  {
+				float(0.0 + radius * std::sin(time)),
 				-2, 
-				float(0.0 + radius * std::cos(angle))
+				float(0.0 + radius * std::cos(time))
 		};
+		spot_lights[1].direction = camera.front();	
+		spot_lights[1].position = camera.position;
 	}
 
 	std::vector<ModelUniforms> model_uniforms(models.size());
@@ -966,16 +979,7 @@ void update(double time) {
         uniforms.shininess = model.shininess;
 	}
 
-
 	*(SceneUniforms*)scene_uniforms_buffer->mapped_region = scene_uniforms;
-	std::vector<SpotLight> spot_lights_uniforms(spot_lights.size());
-	std::vector<PointLight> point_lights_uniforms(point_lights.size());
-	for (int i = 0; i < point_lights.size(); i++) {
-		point_lights_uniforms[i] = point_lights[i];
-	}
-	for (int i = 0; i < spot_lights.size(); i++) {
-		spot_lights_uniforms[i] = spot_lights[i];
-	}
 
 	const size_t model_alignment =
 		veekay::graphics::Buffer::structureAlignment(sizeof(ModelUniforms));
@@ -991,7 +995,7 @@ void update(double time) {
 		veekay::graphics::Buffer::structureAlignment(sizeof(PointLight));
 
 	for (size_t i = 0, n = point_lights.size(); i < n; ++i) {
-		const PointLight& uniforms = point_lights_uniforms[i];
+		const PointLight& uniforms = point_lights[i];
 
 		char* const pointer = static_cast<char*>(point_lights_buffer->mapped_region) + i * point_alignment;
 		*reinterpret_cast<PointLight*>(pointer) = uniforms;
@@ -1001,7 +1005,7 @@ void update(double time) {
 		veekay::graphics::Buffer::structureAlignment(sizeof(SpotLight));
 
 	for (size_t i = 0, n = spot_lights.size(); i < n; ++i) {
-		const SpotLight& uniforms = spot_lights_uniforms[i];
+		const SpotLight& uniforms = spot_lights[i];
 
 		char* const pointer = static_cast<char*>(spot_lights_buffer->mapped_region) + i * spot_alignment;
 		*reinterpret_cast<SpotLight*>(pointer) = uniforms;

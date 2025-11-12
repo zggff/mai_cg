@@ -65,7 +65,7 @@ void main() {
 
     vec3 ambient = ambient_color * ambient_intensity * color;
 
-    vec3 color = ambient + sun;
+    vec3 color = ambient + sun * shininess;
 
 	for (uint i = 0; i < point_lights_count; ++i) {
 		PointLight light = point_lights[i];
