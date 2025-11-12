@@ -105,7 +105,7 @@ struct PointLight {
 
 struct SpotLight {
 	veekay::vec3 position;
-	float radius;
+	float intensity;
 	veekay::vec3 direction;
 	float angle; // Косинус угла
     veekay::vec3 color; float _pad0;
@@ -821,6 +821,29 @@ void initialize(VkCommandBuffer cmd) {
 
 	});
 
+	spot_lights.push_back(SpotLight {
+		.color = vec3({1.0, 0.0, 0.0}),
+		.intensity = 10,
+		.position = vec3({
+			2,
+			-1, 
+			2}
+		),
+		.direction = {-2, 0, -2},
+		.angle = static_cast<float>(std::cos(M_PI/4)),
+	});
+
+	models.emplace_back(Model{
+		.mesh = sphere_mesh,
+		.transform = Transform{
+			.scale = {0.1, 0.1, 0.1},
+			.position = {2, -1, 2},
+		},
+		.color = veekay::vec3{1.0f, 0.0f, 0.0f},
+        .shininess = 2.0,
+	});
+
+
 	models.emplace_back(Model{
 		.mesh = sphere_mesh,
 		.transform = Transform{
@@ -950,6 +973,9 @@ void update(double time) {
 	for (int i = 0; i < point_lights.size(); i++) {
 		point_lights_uniforms[i] = point_lights[i];
 	}
+	for (int i = 0; i < spot_lights.size(); i++) {
+		spot_lights_uniforms[i] = spot_lights[i];
+	}
 
 	const size_t model_alignment =
 		veekay::graphics::Buffer::structureAlignment(sizeof(ModelUniforms));
@@ -969,6 +995,16 @@ void update(double time) {
 
 		char* const pointer = static_cast<char*>(point_lights_buffer->mapped_region) + i * point_alignment;
 		*reinterpret_cast<PointLight*>(pointer) = uniforms;
+	}
+
+	const size_t spot_alignment =
+		veekay::graphics::Buffer::structureAlignment(sizeof(SpotLight));
+
+	for (size_t i = 0, n = spot_lights.size(); i < n; ++i) {
+		const SpotLight& uniforms = spot_lights_uniforms[i];
+
+		char* const pointer = static_cast<char*>(spot_lights_buffer->mapped_region) + i * spot_alignment;
+		*reinterpret_cast<SpotLight*>(pointer) = uniforms;
 	}
 }
 

@@ -29,9 +29,9 @@ struct PointLight {
 };
 
 struct SpotLight {
-	vec4 position_radius;
+	vec4 position_intensity;
 	vec4 direction_angle;
-	vec3 f_color;
+	vec3 color;
 };
 
 layout(binding = 2, std430) readonly buffer PointLights {
@@ -49,14 +49,14 @@ void main() {
 		final_color = vec4(color, 0);
 		return;
 	}
-    vec3 normal = normalize(f_normal);
-	vec3 view_dir = normalize(view_position - f_position);
-    vec3 half_vector = normalize(view_dir - sun_direction);
+    vec3 N = normalize(f_normal);
+	vec3 V = normalize(view_position - f_position);
+    vec3 half_vector = normalize(V - sun_direction);
 
-    float sun_shade = max(0.0f, -dot(sun_direction, normal));
+    float sun_shade = max(0.0f, -dot(sun_direction, N));
     vec3 sun_specular = pow(
                             max(0.0f, 
-                                dot(normal, 
+                                dot(N, 
                                     half_vector)),
                             shininess) * sun_color;
 
@@ -72,9 +72,7 @@ void main() {
 		vec3 position = light.position_intensity.xyz;
 		float intensity = light.position_intensity.w;
 
-		vec3 N = normalize(f_normal);
 		vec3 L = normalize(position - f_position);
-		vec3 V = normalize(view_position - f_position);
 		vec3 H = normalize(L + V);
 
 		float diff = max(dot(N, L), 0.0);
@@ -93,6 +91,37 @@ void main() {
 		vec3 spot_color = attenuation * intensity * (diffuse + specular);
 
 		color += spot_color;
+	}
+
+	for (uint i = 0; i < spot_lights_count; ++i) {
+		SpotLight light = spot_lights[i];
+		vec3 position = light.position_intensity.xyz;
+		float intensity = light.position_intensity.w;
+		vec3 light_direction = light.direction_angle.xyz;
+		float light_angle = light.direction_angle.w;
+
+		vec3 L = normalize(position - f_position);
+		float spot_angle = -dot(light_direction, L);
+		if (spot_angle > light_angle) {
+			vec3 H = normalize(L + V);
+			float diff = max(dot(N, L), 0.0);
+			float spec = 0.0;
+			if (diff > 0.0) {
+				spec = pow(max(dot(N, H), 0.0), shininess);
+			}
+
+			float distance = length(position - f_position);
+			float attenuation = 1.0 / (distance * distance);
+
+			vec3 diffuse = diff * shininess * light.color;
+			vec3 specular = spec * shininess * light.color;
+
+			vec3 spot_color = attenuation * intensity * (diffuse + specular);
+
+			color += spot_color;
+
+
+		}
 	}
 
 	final_color = vec4(color, 0);
