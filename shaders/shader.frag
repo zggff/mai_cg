@@ -24,7 +24,7 @@ layout(binding = 1, std140) uniform ModelUniforms {
 };
 
 struct PointLight {
-	vec4 position_radius;
+	vec4 position_intensity;
 	vec3 color;
 };
 
@@ -45,6 +45,10 @@ layout(binding = 3, std430) readonly buffer SpotLights {
 
 
 void main() {
+	if (shininess > 1) {
+		final_color = vec4(color, 0);
+		return;
+	}
     vec3 normal = normalize(f_normal);
 	vec3 view_dir = normalize(view_position - f_position);
     vec3 half_vector = normalize(view_dir - sun_direction);
@@ -61,5 +65,35 @@ void main() {
 
     vec3 ambient = ambient_color * ambient_intensity * color;
 
-    final_color = vec4(ambient + sun, 0);
+    vec3 color = ambient + sun;
+
+	for (uint i = 0; i < point_lights_count; ++i) {
+		PointLight light = point_lights[i];
+		vec3 position = light.position_intensity.xyz;
+		float intensity = light.position_intensity.w;
+
+		vec3 N = normalize(f_normal);
+		vec3 L = normalize(position - f_position);
+		vec3 V = normalize(view_position - f_position);
+		vec3 H = normalize(L + V);
+
+		float diff = max(dot(N, L), 0.0);
+
+		float spec = 0.0;
+		if (diff > 0.0) {
+			spec = pow(max(dot(N, H), 0.0), shininess);
+		}
+
+		float distance = length(position - f_position);
+		float attenuation = 1.0 / (distance * distance);
+
+		vec3 diffuse = diff * shininess * light.color;
+		vec3 specular = spec * shininess * light.color;
+
+		vec3 spot_color = attenuation * intensity * (diffuse + specular);
+
+		color += spot_color;
+	}
+
+	final_color = vec4(color, 0);
 }

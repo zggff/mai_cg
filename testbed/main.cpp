@@ -13,6 +13,8 @@
 #include <imgui.h>
 #include <lodepng.h>
 
+#include <iostream>
+
 /*
 Матрица камеры рассчитывается с помощью матрицы Look-At. Должны быть реализованы следующие компоненты освещения: рассеянное, направленное и точечные источники света. Точечные источники света должны терять свою интенсивность по закону обратных квадратов
 */
@@ -44,7 +46,7 @@ struct SceneUniforms {
 
 struct ModelUniforms {
 	mat4 model;
-	vec3 color; float _pad0;
+	vec3 color;;
 	float shininess;
 };
 
@@ -97,8 +99,8 @@ struct Camera {
 
 struct PointLight {
 	veekay::vec3 position;
-	float radius;
-	veekay::vec3 color; float _pad0;
+	float intensity;
+	veekay::vec3 color;
 };
 
 struct SpotLight {
@@ -161,9 +163,10 @@ veekay::mat4 Transform::matrix() const {
 	// TODO: Scaling and rotation
 
     // auto r = veekay::mat4::rotation({})
+	auto s = veekay::mat4::scaling(scale);
 	auto t = veekay::mat4::translation(position);
 
-	return t;
+	return s * t;
 }
 
 veekay::mat4 Camera::view() const {
@@ -214,6 +217,10 @@ veekay::mat4 Camera::view_projection(float aspect_ratio) const {
     }
 	return view() * projection;
 }
+
+
+float angle = 0;
+float radius = 5;
 
 // NOTE: Loads shader byte code from file
 // NOTE: Your shaders are compiled via CMake with this code too, look it up
@@ -582,10 +589,12 @@ void initialize(VkCommandBuffer cmd) {
 			},
             {
                 .buffer = point_lights_buffer->buffer,
+				.offset = 0,
                 .range = max_point_lights * sizeof(PointLight),
             },
             {
                 .buffer = spot_lights_buffer->buffer,
+				.offset = 0,
                 .range = max_spot_lights * sizeof(SpotLight),
             },
 		};
@@ -625,7 +634,7 @@ void initialize(VkCommandBuffer cmd) {
 				.dstArrayElement = 0,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				.pBufferInfo = &buffer_infos[2],
+				.pBufferInfo = &buffer_infos[3],
 
             },
 
@@ -790,7 +799,7 @@ void initialize(VkCommandBuffer cmd) {
 			.position = {-1.0f, 0.5f, 0.5f},
 		},
 		.color = veekay::vec3{1.0f, 0.0f, 0.0f},
-        .shininess = 0.0,
+        .shininess = 0.4,
 	});
 	models.emplace_back(Model{
 		.mesh = sphere_mesh,
@@ -798,8 +807,34 @@ void initialize(VkCommandBuffer cmd) {
 			.position = {1.0f, 0.0f, 0.5f},
 		},
 		.color = veekay::vec3{0.0f, 0.0f, 1.0f},
-        .shininess = 0.0,
+        .shininess = 0.4,
 	});
+
+	point_lights.push_back(PointLight {
+		.color = vec3({0.0, 1.0, 0.0}),
+		.intensity = 10,
+		.position = vec3({
+			(float)(0.0 + radius * std::sin(angle)),
+			-2, 
+			(float)(0.0 + radius * std::cos(angle))}
+		)
+
+	});
+
+	models.emplace_back(Model{
+		.mesh = sphere_mesh,
+		.transform = Transform{
+			.scale = {0.1, 0.1, 0.1},
+			.position = {
+				float(0.0 + radius * std::sin(angle)),
+				-2, 
+				float(0.0 + radius * std::cos(angle))
+			},
+		},
+		.color = veekay::vec3{0.0f, 1.0f, 0.0f},
+        .shininess = 2.0,
+	});
+
 }
 
 // NOTE: Destroy resources here, do not cause leaks in your program!
@@ -815,6 +850,9 @@ void shutdown() {
 	delete plane_mesh.index_buffer;
 	delete plane_mesh.vertex_buffer;
 
+	delete sphere_mesh.index_buffer;
+	delete sphere_mesh.vertex_buffer;
+
 	delete model_uniforms_buffer;
 	delete scene_uniforms_buffer;
     delete spot_lights_buffer;
@@ -829,15 +867,18 @@ void shutdown() {
 	vkDestroyShaderModule(device, vertex_shader_module, nullptr);
 }
 
+
 void update(double time) {
 	ImGui::Begin("Controls:");
     ImGui::Checkbox("use look at for camera", &useLookAt);
+    ImGui::SliderAngle("angle", &angle);
+    ImGui::SliderFloat("radius", &radius, 1, 10);
 	ImGui::End();
 
 	if (!ImGui::IsWindowHovered()) {
 		using namespace veekay::input;
 
-		if (mouse::isButtonDown(mouse::Button::left)) {
+		if (mouse::isButtonDown(mouse::Button::right)) {
 			auto move_delta = mouse::cursorDelta();
             camera.rotate(move_delta);
 
@@ -875,9 +916,22 @@ void update(double time) {
         .ambient_intensity = 0.5,
         .sun_color = {1.0, 0.9, 0.9},
         .sun_direction = {0.0, 1.0, 0.5},
-        .point_lights_count = 0,
-        .spot_lights_count = 0,
+        .point_lights_count = (uint32_t )point_lights.size(),
+        .spot_lights_count = (uint32_t ) spot_lights.size(),
 	};
+
+	{
+		models.back().transform.position =  {
+				float(0.0 + radius * std::sin(angle)),
+				-2, 
+				float(0.0 + radius * std::cos(angle))
+		};
+		point_lights.back().position =  {
+				float(0.0 + radius * std::sin(angle)),
+				-2, 
+				float(0.0 + radius * std::cos(angle))
+		};
+	}
 
 	std::vector<ModelUniforms> model_uniforms(models.size());
 	for (size_t i = 0, n = models.size(); i < n; ++i) {
@@ -885,22 +939,36 @@ void update(double time) {
 		ModelUniforms& uniforms = model_uniforms[i];
 
 		uniforms.model = model.transform.matrix();
-        uniforms.shininess = model.shininess;
         uniforms.color = model.color;
+        uniforms.shininess = model.shininess;
 	}
+
 
 	*(SceneUniforms*)scene_uniforms_buffer->mapped_region = scene_uniforms;
 	std::vector<SpotLight> spot_lights_uniforms(spot_lights.size());
 	std::vector<PointLight> point_lights_uniforms(point_lights.size());
+	for (int i = 0; i < point_lights.size(); i++) {
+		point_lights_uniforms[i] = point_lights[i];
+	}
 
-	const size_t alignment =
+	const size_t model_alignment =
 		veekay::graphics::Buffer::structureAlignment(sizeof(ModelUniforms));
 
 	for (size_t i = 0, n = model_uniforms.size(); i < n; ++i) {
 		const ModelUniforms& uniforms = model_uniforms[i];
 
-		char* const pointer = static_cast<char*>(model_uniforms_buffer->mapped_region) + i * alignment;
+		char* const pointer = static_cast<char*>(model_uniforms_buffer->mapped_region) + i * model_alignment;
 		*reinterpret_cast<ModelUniforms*>(pointer) = uniforms;
+	}
+
+	const size_t point_alignment =
+		veekay::graphics::Buffer::structureAlignment(sizeof(PointLight));
+
+	for (size_t i = 0, n = point_lights.size(); i < n; ++i) {
+		const PointLight& uniforms = point_lights_uniforms[i];
+
+		char* const pointer = static_cast<char*>(point_lights_buffer->mapped_region) + i * point_alignment;
+		*reinterpret_cast<PointLight*>(pointer) = uniforms;
 	}
 }
 
