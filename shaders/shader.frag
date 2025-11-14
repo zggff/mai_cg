@@ -49,14 +49,14 @@ void main() {
 		final_color = vec4(color, 0);
 		return;
 	}
-    vec3 N = normalize(f_normal);
-	vec3 V = normalize(view_position - f_position);
-    vec3 half_vector = normalize(V - sun_direction);
+    vec3 norm = normalize(f_normal);
+	vec3 to_camera = normalize(view_position - f_position);
+    vec3 half_vector = normalize(to_camera - sun_direction);
 
-    float sun_shade = max(0.0f, -dot(sun_direction, N));
+    float sun_shade = max(0.0f, -dot(sun_direction, norm));
     vec3 sun_specular = pow(
                             max(0.0f, 
-                                dot(N, 
+                                dot(norm, 
                                     half_vector)),
                             shininess) * sun_color;
 
@@ -72,14 +72,14 @@ void main() {
 		vec3 position = light.position_intensity.xyz;
 		float intensity = light.position_intensity.w;
 
-		vec3 L = normalize(position - f_position);
-		vec3 H = normalize(L + V);
+		vec3 to_light = normalize(position - f_position);
+		vec3 half_vector = normalize(to_light + to_camera);
 
-		float diff = max(dot(N, L), 0.0);
+		float diff = max(dot(norm, to_light), 0.0);
 
 		float spec = 0.0;
 		if (diff > 0.0) {
-			spec = pow(max(dot(N, H), 0.0), shininess);
+			spec = pow(max(dot(norm, half_vector), 0.0), shininess);
 		}
 
 		float distance = length(position - f_position);
@@ -100,14 +100,14 @@ void main() {
 		vec3 light_direction = light.direction_angle.xyz;
 		float light_angle = light.direction_angle.w;
 
-		vec3 L = normalize(position - f_position);
-		float spot_angle = -dot(light_direction, L);
+		vec3 to_light = normalize(position - f_position);
+		float spot_angle = -dot(light_direction, to_light);
 		if (spot_angle > light_angle) {
-			vec3 H = normalize(L + V);
-			float diff = max(dot(N, L), 0.0);
+			vec3 half_vector = normalize(to_light + to_camera);
+			float diff = max(dot(norm, to_light), 0.0);
 			float spec = 0.0;
 			if (diff > 0.0) {
-				spec = pow(max(dot(N, H), 0.0), shininess);
+				spec = pow(max(dot(norm, half_vector), 0.0), shininess);
 			}
 
 			float distance = length(position - f_position);
