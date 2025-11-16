@@ -1,5 +1,7 @@
 #version 450
 
+#define PI 3.1415926538
+
 layout (location = 0) in vec3 f_position;
 layout (location = 1) in vec3 f_normal;
 layout (location = 2) in vec2 f_uv;
@@ -15,6 +17,7 @@ layout(binding = 0, std140) uniform SceneUniforms {
     float ambient_intensity;
     uint point_lights_count;
 	uint spot_lights_count;
+    uint render_mode;
 };
 
 layout(binding = 1, std140) uniform ModelUniforms {
@@ -49,8 +52,16 @@ layout(binding = 6, std430) readonly buffer SpotLights {
 
 
 void main() {
+    vec2 f_uv = f_uv;
+    if (render_mode == 1) {
+        f_uv = sin(PI * f_uv / 2);
+    }
+    if (render_mode == 2) {
+        f_uv = vec2(1 - f_uv.x, 1 - f_uv.y);
+    }
+
     vec3 model_color = texture(albedo_texture, f_uv).rgb;
-	float shininess = texture(specular_texture, f_uv).r;
+	float shininess = texture(specular_texture, f_uv).r * m_shininess;
     vec3 emissive_color = texture(emissive_texture, f_uv).rgb;
 
     vec3 norm = normalize(f_normal);

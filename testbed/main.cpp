@@ -45,12 +45,11 @@ struct SceneUniforms {
 	float ambient_intensity;
 	uint32_t point_lights_count;
 	uint32_t spot_lights_count;
-	float _pad4;
+	uint32_t render_mode;
 };
 
 struct ModelUniforms {
 	mat4 model;
-	vec3 color;
 	float shininess;
 };
 
@@ -72,7 +71,6 @@ struct Transform {
 struct Model {
 	Mesh mesh;
 	Transform transform;
-	vec3 color;
 	float shininess;
 	VkDescriptorSet descriptor_set;
 	// Model(VkDevice device);
@@ -964,7 +962,6 @@ void initialize(VkCommandBuffer cmd) {
 		.mesh = meshes[0],
 		.transform = Transform{
 			.position = {0.0, 1.0, 0.0}},
-		.color = veekay::vec3{0.0f, 0.0f, 0.0f},
 		.shininess = 0.1,
 		.descriptor_set = descriptorWithTexture(device, textures[ASSET_TILES]),
 	});
@@ -974,7 +971,6 @@ void initialize(VkCommandBuffer cmd) {
 		.transform = Transform{
 			.position = {-1.0f, 0.5f, 0.5f},
 		},
-		.color = veekay::vec3{1.0f, 0.0f, 0.0f},
 		.shininess = 0.4,
 		.descriptor_set = descriptorWithTexture(device, nullptr),
 	});
@@ -984,7 +980,6 @@ void initialize(VkCommandBuffer cmd) {
 		.transform = Transform{
 			.position = {1.0f, 0.0f, 0.5f},
 		},
-		.color = veekay::vec3{0.0f, 0.0f, 1.0f},
 		.shininess = 0.4,
 		.descriptor_set = descriptorWithTexture(device, textures[ASSET_EARTH], textures[ASSET_EARTH_SPECULAR]),
 	});
@@ -1020,8 +1015,7 @@ void initialize(VkCommandBuffer cmd) {
 			.scale = {0.1, 0.1, 0.1},
 			.position = {2, -1, 2},
 		},
-		.color = veekay::vec3{1.0f, 0.0f, 0.0f},
-		.shininess = 2.0,
+		.shininess = 1.0,
 		.descriptor_set = descriptorWithTexture(device, textures[ASSET_RED], textures[ASSET_BLACK], textures[ASSET_RED]),
 	});
 
@@ -1034,8 +1028,7 @@ void initialize(VkCommandBuffer cmd) {
 				-2,
 				float(0.0 + radius * std::cos(angle))},
 		},
-		.color = veekay::vec3{0.0f, 1.0f, 0.0f},
-		.shininess = 2.0,
+		.shininess = 1.0,
 		.descriptor_set = descriptorWithTexture(device, textures[ASSET_GREEN], textures[ASSET_BLACK], textures[ASSET_GREEN]),
 	});
 }
@@ -1072,11 +1065,14 @@ void shutdown() {
 	vkDestroyShaderModule(device, vertex_shader_module, nullptr);
 }
 
+int mode = 0;
+
 void update(double time) {
 	ImGui::Begin("Controls:");
 	ImGui::Checkbox("use look at for camera", &useLookAt);
 	// ImGui::SliderAngle("angle", &angle);
 	ImGui::SliderFloat("radius", &radius, 1, 10);
+	ImGui::InputInt("mode", &mode, 1, 1);
 	ImGui::End();
 
 	if (!ImGui::IsWindowHovered()) {
@@ -1122,6 +1118,7 @@ void update(double time) {
 		.sun_direction = {0.0, 1.0, 0.5},
 		.point_lights_count = (uint32_t)point_lights.size(),
 		.spot_lights_count = (uint32_t)spot_lights.size(),
+		.render_mode = (uint32_t)mode,
 	};
 
 	{
@@ -1143,7 +1140,6 @@ void update(double time) {
 		ModelUniforms &uniforms = model_uniforms[i];
 
 		uniforms.model = model.transform.matrix();
-		uniforms.color = model.color;
 		uniforms.shininess = model.shininess;
 	}
 
