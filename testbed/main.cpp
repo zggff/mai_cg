@@ -151,14 +151,18 @@ veekay::graphics::Buffer *spot_lights_buffer;
 std::vector<Mesh> meshes;
 
 veekay::graphics::Texture *missing_texture;
+veekay::graphics::Texture *default_emissive;
+veekay::graphics::Texture *default_specular;
+
 VkSampler missing_texture_sampler;
 
-std::vector<veekay::graphics::Texture*> textures;
+std::vector<veekay::graphics::Texture *> textures;
 VkSampler texture_sampler;
 } // namespace
 //
 
-VkDescriptorSet descriptorWithTexture(VkDevice &device, veekay::graphics::Texture *texture) {
+VkDescriptorSet descriptorWithTexture(VkDevice &device, veekay::graphics::Texture *texture = nullptr,
+									  veekay::graphics::Texture *specular = nullptr, veekay::graphics::Texture *emissive = nullptr) {
 	VkDescriptorSet descriptor_set;
 	VkDescriptorSetAllocateInfo info{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -199,11 +203,24 @@ VkDescriptorSet descriptorWithTexture(VkDevice &device, veekay::graphics::Textur
 
 		VkDescriptorImageInfo image_infos[] = {
 			{
-				.sampler = texture ? texture_sampler : missing_texture_sampler, // Какой сэмплер будет использоваться
-				.imageView = texture ? texture->view : missing_texture->view,	// Какая текстура будет использоваться
+				.sampler = texture ? texture_sampler : missing_texture_sampler,
+				.imageView = texture ? texture->view : missing_texture->view,
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			},
+			{
+				.sampler = texture_sampler,
+				.imageView = specular ? specular->view : default_specular->view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			},
+			{
+				.sampler = texture_sampler,
+				.imageView = emissive ? emissive->view : default_emissive->view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			},
+
 		};
+
+		// std::cout << image_infos[2].imageView << std::endl;
 
 		VkWriteDescriptorSet write_infos[] = {
 			{
@@ -239,13 +256,31 @@ VkDescriptorSet descriptorWithTexture(VkDevice &device, veekay::graphics::Textur
 				.dstBinding = 3,
 				.dstArrayElement = 0,
 				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.pImageInfo = &image_infos[1],
+			},
+			{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptor_set,
+				.dstBinding = 4,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.pImageInfo = &image_infos[2],
+			},
+			{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptor_set,
+				.dstBinding = 5,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 				.pBufferInfo = &buffer_infos[2],
 			},
 			{
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.dstSet = descriptor_set,
-				.dstBinding = 4,
+				.dstBinding = 6,
 				.dstArrayElement = 0,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -353,29 +388,94 @@ VkShaderModule loadShaderModule(const char *path) {
 	return result;
 }
 
+void load_texture(VkCommandBuffer cmd, std::string path) {
+	uint32_t width, height;
+	std::vector<uint8_t> pixels;
+	lodepng::decode(pixels, width, height, path);
+	textures.push_back(new veekay::graphics::Texture(
+		cmd, width, height,
+		VK_FORMAT_R8G8B8A8_UNORM, // 8 бит на каждый канал цвета
+		pixels.data()));
+}
+void load_texture_color(VkCommandBuffer cmd, veekay::vec4 color) {
+	textures.push_back(new veekay::graphics::Texture(
+		cmd, 1, 1,
+		VK_FORMAT_R32G32B32A32_SFLOAT, // 8 бит на каждый канал цвета
+		&color));
+}
+
+#define ASSET_TILES 0
+#define ASSET_EARTH 1
+#define ASSET_EARTH_SPECULAR 2
+#define ASSET_BLACK 3
+#define ASSET_RED 4
+#define ASSET_GREEN 5
+
+void load_textures(VkCommandBuffer cmd, VkDevice &device) {
+	load_texture(cmd, "./assets/tiles.png");
+	load_texture(cmd, "./assets/earth.png");
+	load_texture(cmd, "./assets/earth gray.png");
+	load_texture_color(cmd, {0.0, 0.0, 0.0, 1.0}); // ASSET_BLACK
+	load_texture_color(cmd, {1.0, 0.0, 0.0, 1.0}); // ASSET_RED
+	load_texture_color(cmd, {0.0, 1.0, 0.0, 1.0}); // ASSET_GREEN
+	{
+		VkSamplerCreateInfo info{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = VK_FILTER_LINEAR,				  // Фильтрация если плотность текселей меньше
+			.minFilter = VK_FILTER_LINEAR,				  // Фильтрация если плотность больше
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
+			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.anisotropyEnable = true,	 // Включить анизотропную фильтрацию?
+			.maxAnisotropy = 16.0f,		 // Кол-во сэмплов анизотропной фильтрации
+			.minLod = 0.0f,				 // Минимальный уровень мипа
+			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
+		};
+		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
+			std::cerr << "Failed to create Vulkan texture sampler\n";
+			veekay::app.running = false;
+			return;
+		}
+	}
+
+	{
+		VkSamplerCreateInfo info{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		};
+
+		if (vkCreateSampler(device, &info, nullptr, &missing_texture_sampler) != VK_SUCCESS) {
+			std::cerr << "Failed to create Vulkan texture sampler\n";
+			veekay::app.running = false;
+			return;
+		}
+
+		uint32_t pixels[] = {
+			0xff000000,
+			0xffff00ff,
+			0xffff00ff,
+			0xff000000,
+		};
+		missing_texture = new veekay::graphics::Texture(cmd, 2, 2,
+														VK_FORMAT_B8G8R8A8_UNORM,
+														pixels);
+	}
+
+	veekay::vec4 white = {1.0f, 1.0f, 1.0f, 1.0f};
+	default_specular = new veekay::graphics::Texture(
+		cmd, 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT, &white);
+	veekay::vec4 black = {0.0f, 0.0f, 0.0f, 0.0f};
+	default_emissive = new veekay::graphics::Texture(
+		cmd, 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT, &black);
+}
+
 void initialize(VkCommandBuffer cmd) {
 	VkDevice &device = veekay::app.vk_device;
 	VkPhysicalDevice &physical_device = veekay::app.vk_physical_device;
 
-	{
-		uint32_t width, height;
-		std::vector<uint8_t> pixels;
-		lodepng::decode(pixels, width, height, "./assets/tiles.png");
-		textures.push_back(new veekay::graphics::Texture(
-			cmd, width, height,
-			VK_FORMAT_R8G8B8A8_UNORM, // 8 бит на каждый канал цвета
-			pixels.data()));
-	}
-	{
-
-		uint32_t width, height;
-		std::vector<uint8_t> pixels;
-		lodepng::decode(pixels, width, height, "./assets/earth.png");
-		textures.push_back(new veekay::graphics::Texture(
-			cmd, width, height,
-			VK_FORMAT_R8G8B8A8_UNORM, // 8 бит на каждый канал цвета
-			pixels.data()));
-	}
+	load_textures(cmd, device);
 
 	{ // NOTE: Build graphics pipeline
 		vertex_shader_module = loadShaderModule("./shaders/shader.vert.spv");
@@ -540,6 +640,15 @@ void initialize(VkCommandBuffer cmd) {
 					.descriptorCount = 8,
 				},
 				{
+					.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.descriptorCount = 8,
+				},
+				{
+					.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.descriptorCount = 8,
+				},
+
+				{
 					.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 					.descriptorCount = 8,
 				}};
@@ -580,15 +689,27 @@ void initialize(VkCommandBuffer cmd) {
 					.descriptorCount = 1,
 					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 				},
-
 				{
 					.binding = 3,
-					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 					.descriptorCount = 1,
 					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 				},
 				{
 					.binding = 4,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.descriptorCount = 1,
+					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+
+				{
+					.binding = 5,
+					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+					.descriptorCount = 1,
+					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+				{
+					.binding = 6,
 					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 					.descriptorCount = 1,
 					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -666,53 +787,6 @@ void initialize(VkCommandBuffer cmd) {
 		max_spot_lights * sizeof(SpotLight),
 		nullptr,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-	{
-		VkSamplerCreateInfo info{
-			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-			.magFilter = VK_FILTER_LINEAR,				  // Фильтрация если плотность текселей меньше
-			.minFilter = VK_FILTER_LINEAR,				  // Фильтрация если плотность больше
-			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
-			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
-			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.anisotropyEnable = true,	 // Включить анизотропную фильтрацию?
-			.maxAnisotropy = 16.0f,		 // Кол-во сэмплов анизотропной фильтрации
-			.minLod = 0.0f,				 // Минимальный уровень мипа
-			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
-		};
-		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
-			std::cerr << "Failed to create Vulkan texture sampler\n";
-			veekay::app.running = false;
-			return;
-		}
-	}
-
-	// NOTE: This texture and sampler is used when texture could not be loaded
-	{
-		VkSamplerCreateInfo info{
-			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-		};
-
-		if (vkCreateSampler(device, &info, nullptr, &missing_texture_sampler) != VK_SUCCESS) {
-			std::cerr << "Failed to create Vulkan texture sampler\n";
-			veekay::app.running = false;
-			return;
-		}
-
-		uint32_t pixels[] = {
-			0xff000000,
-			0xffff00ff,
-			0xffff00ff,
-			0xff000000,
-		};
-
-		missing_texture = new veekay::graphics::Texture(cmd, 2, 2,
-														VK_FORMAT_B8G8R8A8_UNORM,
-														pixels);
-	}
 
 	// NOTE: Plane mesh initialization
 	{
@@ -848,7 +922,7 @@ void initialize(VkCommandBuffer cmd) {
 
 				vec3 pos({x, y, z});
 				vec3 normal = vec3::normalized(pos);
-				vec2 uv({(float)j / vertex_cnt, 1-(float)i / vertex_cnt});
+				vec2 uv({(float)j / vertex_cnt, 1 - (float)i / vertex_cnt});
 
 				vertices.push_back({pos, normal, uv});
 			}
@@ -892,7 +966,7 @@ void initialize(VkCommandBuffer cmd) {
 			.position = {0.0, 1.0, 0.0}},
 		.color = veekay::vec3{0.0f, 0.0f, 0.0f},
 		.shininess = 0.1,
-		.descriptor_set = descriptorWithTexture(device, textures[0]),
+		.descriptor_set = descriptorWithTexture(device, textures[ASSET_TILES]),
 	});
 
 	models.emplace_back(Model{
@@ -904,6 +978,7 @@ void initialize(VkCommandBuffer cmd) {
 		.shininess = 0.4,
 		.descriptor_set = descriptorWithTexture(device, nullptr),
 	});
+	// earth
 	models.emplace_back(Model{
 		.mesh = meshes[2],
 		.transform = Transform{
@@ -911,7 +986,7 @@ void initialize(VkCommandBuffer cmd) {
 		},
 		.color = veekay::vec3{0.0f, 0.0f, 1.0f},
 		.shininess = 0.4,
-		.descriptor_set = descriptorWithTexture(device, textures[1]),
+		.descriptor_set = descriptorWithTexture(device, textures[ASSET_EARTH], textures[ASSET_EARTH_SPECULAR]),
 	});
 
 	point_lights.push_back(PointLight{
@@ -935,7 +1010,7 @@ void initialize(VkCommandBuffer cmd) {
 
 	spot_lights.push_back(SpotLight{
 		.color = vec3({1.0, 1.0, 0.0}),
-		.intensity = 20,
+		.intensity = 5,
 		.angle = static_cast<float>(std::cos(M_PI / 16)),
 	});
 
@@ -947,7 +1022,7 @@ void initialize(VkCommandBuffer cmd) {
 		},
 		.color = veekay::vec3{1.0f, 0.0f, 0.0f},
 		.shininess = 2.0,
-		.descriptor_set = descriptorWithTexture(device, textures[0]),
+		.descriptor_set = descriptorWithTexture(device, textures[ASSET_RED], textures[ASSET_BLACK], textures[ASSET_RED]),
 	});
 
 	models.emplace_back(Model{
@@ -961,7 +1036,7 @@ void initialize(VkCommandBuffer cmd) {
 		},
 		.color = veekay::vec3{0.0f, 1.0f, 0.0f},
 		.shininess = 2.0,
-		.descriptor_set = descriptorWithTexture(device, textures[0]),
+		.descriptor_set = descriptorWithTexture(device, textures[ASSET_GREEN], textures[ASSET_BLACK], textures[ASSET_GREEN]),
 	});
 }
 
@@ -971,10 +1046,12 @@ void shutdown() {
 
 	vkDestroySampler(device, missing_texture_sampler, nullptr);
 	vkDestroySampler(device, texture_sampler, nullptr);
-	for (auto &texture: textures) {
+	for (auto &texture : textures) {
 		delete texture;
 	}
 	delete missing_texture;
+	delete default_emissive;
+	delete default_specular;
 
 	for (auto &mesh : meshes) {
 		delete mesh.index_buffer;
@@ -1039,9 +1116,9 @@ void update(double time) {
 	SceneUniforms scene_uniforms{
 		.view_projection = camera.view_projection(aspect_ratio),
 		.view_position = camera.position,
-		.ambient_color = {0.1, 0.1, 0.1},
-		.ambient_intensity = 0.1,
-		.sun_color = {1.0, 1.0, 1.0},
+		.ambient_color = {1.0, 1.0, 1.0},
+		.ambient_intensity = 0.8,
+		.sun_color = {0.0, 0.0, 0.0},
 		.sun_direction = {0.0, 1.0, 0.5},
 		.point_lights_count = (uint32_t)point_lights.size(),
 		.spot_lights_count = (uint32_t)spot_lights.size(),

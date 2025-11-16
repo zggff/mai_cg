@@ -20,10 +20,12 @@ layout(binding = 0, std140) uniform SceneUniforms {
 layout(binding = 1, std140) uniform ModelUniforms {
 	mat4 model;
 	vec3 m_color;
-	float shininess;
+	float m_shininess;
 };
 
 layout (binding = 2) uniform sampler2D albedo_texture;
+layout (binding = 3) uniform sampler2D specular_texture;
+layout (binding = 4) uniform sampler2D emissive_texture;
 
 struct PointLight {
 	vec4 position_intensity;
@@ -36,24 +38,21 @@ struct SpotLight {
 	vec3 color;
 };
 
-layout(binding = 3, std430) readonly buffer PointLights {
+layout(binding = 5, std430) readonly buffer PointLights {
 	PointLight point_lights[];
 };
 
-layout(binding = 4, std430) readonly buffer SpotLights {
+layout(binding = 6, std430) readonly buffer SpotLights {
 	SpotLight spot_lights[];
 };
 
 
 
 void main() {
-    vec4 texel = texture(albedo_texture, f_uv);
-    vec3 model_color = texel.rgb;
+    vec3 model_color = texture(albedo_texture, f_uv).rgb;
+	float shininess = texture(specular_texture, f_uv).r;
+    vec3 emissive_color = texture(emissive_texture, f_uv).rgb;
 
-	if (shininess > 1) {
-		final_color = vec4(m_color, 0);
-		return;
-	}
     vec3 norm = normalize(f_normal);
 	vec3 to_camera = normalize(view_position - f_position);
     vec3 half_vector = normalize(to_camera - sun_direction);
@@ -129,5 +128,5 @@ void main() {
 		}
 	}
 
-	final_color = vec4(color, 0);
+	final_color = vec4(color + emissive_color, 0);
 }
