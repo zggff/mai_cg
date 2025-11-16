@@ -51,7 +51,7 @@ void main() {
     vec3 model_color = texel.rgb;
 
 	if (shininess > 1) {
-		final_color = vec4(model_color, 0);
+		final_color = vec4(m_color, 0);
 		return;
 	}
     vec3 norm = normalize(f_normal);
