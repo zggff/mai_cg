@@ -19,9 +19,11 @@ layout(binding = 0, std140) uniform SceneUniforms {
 
 layout(binding = 1, std140) uniform ModelUniforms {
 	mat4 model;
-	vec3 color;
+	vec3 m_color;
 	float shininess;
 };
+
+layout (binding = 2) uniform sampler2D albedo_texture;
 
 struct PointLight {
 	vec4 position_intensity;
@@ -34,19 +36,22 @@ struct SpotLight {
 	vec3 color;
 };
 
-layout(binding = 2, std430) readonly buffer PointLights {
+layout(binding = 3, std430) readonly buffer PointLights {
 	PointLight point_lights[];
 };
 
-layout(binding = 3, std430) readonly buffer SpotLights {
+layout(binding = 4, std430) readonly buffer SpotLights {
 	SpotLight spot_lights[];
 };
 
 
 
 void main() {
+    vec4 texel = texture(albedo_texture, f_uv);
+    vec3 model_color = texel.rgb;
+
 	if (shininess > 1) {
-		final_color = vec4(color, 0);
+		final_color = vec4(model_color, 0);
 		return;
 	}
     vec3 norm = normalize(f_normal);
@@ -61,9 +66,9 @@ void main() {
                             shininess) * sun_color;
 
     vec3 sun = sun_shade * sun_color * 
-                               (color + sun_specular);
+                               (model_color + sun_specular);
 
-    vec3 ambient = ambient_color * ambient_intensity * color;
+    vec3 ambient = ambient_color * ambient_intensity * model_color;
 
     vec3 color = ambient + sun * shininess;
 
