@@ -61,7 +61,7 @@ void main() {
     }
 
     vec3 model_color = texture(albedo_texture, f_uv).rgb;
-	float shininess = texture(specular_texture, f_uv).r * m_shininess;
+	float shininess = texture(specular_texture, f_uv).r;
     vec3 emissive_color = texture(emissive_texture, f_uv).rgb;
 
     vec3 norm = normalize(f_normal);
