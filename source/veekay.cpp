@@ -25,7 +25,7 @@ constexpr char window_title[] = "Veekay";
 
 constexpr uint32_t max_frames_in_flight = 2;
 
-GLFWwindow* window;
+GLFWwindow *window;
 
 VkInstance vk_instance;
 VkDebugUtilsMessengerEXT vk_debug_messenger;
@@ -68,26 +68,26 @@ std::vector<VkCommandBuffer> vk_command_buffers;
 
 namespace veekay {
 
-	Application app;
+Application app;
 
-	namespace input {
+namespace input {
 
-		void setup(void* const window_ptr);
-		void cache();
+void setup(void *const window_ptr);
+void cache();
 
-	} // namespace input
+} // namespace input
 
-	namespace graphics {
+namespace graphics {
 
-		void init();
+void init();
 
-	} // namespace graphics
+} // namespace graphics
 
 } // namespace veekay
 
-int veekay::run(const veekay::ApplicationInfo& app_info) {
+int veekay::run(const veekay::ApplicationInfo &app_info) {
 	veekay::app.running = true;
-	
+
 	if (!glfwInit()) {
 		std::cerr << "Failed to initialize GLFW\n";
 		return 1;
@@ -97,7 +97,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	window = glfwCreateWindow(window_default_width, window_default_height,
-	                          window_title, nullptr, nullptr);
+							  window_title, nullptr, nullptr);
 	if (!window) {
 		std::cerr << "Failed to create GLFW window\n";
 		return 1;
@@ -124,9 +124,9 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		vkb::InstanceBuilder instance_builder;
 
 		auto builder_result = instance_builder.require_api_version(1, 2, 0)
-		                                      .request_validation_layers()
-		                                      .use_default_debug_messenger()
-		                                      .build();
+								  .request_validation_layers()
+								  .use_default_debug_messenger()
+								  .build();
 		if (!builder_result) {
 			std::cerr << builder_result.error().message() << '\n';
 			return 1;
@@ -138,7 +138,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		vk_debug_messenger = instance.debug_messenger;
 
 		if (glfwCreateWindowSurface(vk_instance, window, nullptr, &vk_surface) != VK_SUCCESS) {
-			const char* message;
+			const char *message;
 			glfwGetError(&message);
 			std::cerr << message << '\n';
 			return 1;
@@ -150,9 +150,16 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 			.samplerAnisotropy = true,
 		};
 
+		VkPhysicalDeviceDynamicRenderingFeaturesKHR dyn_rendering {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
+			.dynamicRendering = true,
+		};
+
 		auto selector_result = physical_device_selector.set_surface(vk_surface)
-		                                               .set_required_features(device_features)
-		                                               .select();
+								   .set_required_features(device_features)
+								   .add_required_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
+								   .add_required_extension_features(dyn_rendering)
+								   .select();
 		if (!selector_result) {
 			std::cerr << selector_result.error().message() << '\n';
 			return 1;
@@ -176,7 +183,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 			vk_physical_device = device.physical_device;
 
 			auto queue_type = vkb::QueueType::graphics;
-			
+
 			vk_graphics_queue = device.get_queue(queue_type).value();
 			vk_graphics_queue_family = device.get_queue_index(queue_type).value();
 		}
@@ -191,10 +198,10 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		};
 
 		auto swapchain_result = swapchain_builder.set_desired_format(surface_format)
-		                                         .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-		                                         .set_desired_extent(app.window_width, app.window_height)
-		                                         .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-		                                         .build();
+									.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+									.set_desired_extent(app.window_width, app.window_height)
+									.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+									.build();
 
 		if (!swapchain_result) {
 			std::cerr << swapchain_result.error().message() << '\n';
@@ -216,7 +223,8 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 	{ // NOTE: ImGui initialization
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
-		ImGuiIO& io = ImGui::GetIO(); (void)io;
+		ImGuiIO &io = ImGui::GetIO();
+		(void)io;
 
 		ImGui::StyleColorsDark();
 
@@ -370,7 +378,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 		vk_image_depth_format = VK_FORMAT_UNDEFINED;
 
-		for (const auto& f : candidates) {
+		for (const auto &f : candidates) {
 			VkFormatProperties properties;
 			vkGetPhysicalDeviceFormatProperties(vk_physical_device, f, &properties);
 
@@ -409,10 +417,10 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 		uint32_t index = UINT_MAX;
 		for (uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
-			const VkMemoryType& type = properties.memoryTypes[i];
+			const VkMemoryType &type = properties.memoryTypes[i];
 
 			if ((requirements.memoryTypeBits & (1 << i)) &&
-			    (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+				(type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
 				index = i;
 				break;
 			}
@@ -509,12 +517,12 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 		VkSubpassDependency dependency{
 			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-			                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+							VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-			                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+							VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-			                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+							 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		};
 
@@ -608,7 +616,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 	{ // NOTE: Allocate command buffers
 		vk_command_buffers.resize(vk_framebuffers.size());
-		
+
 		VkCommandBufferAllocateInfo info{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 			.commandPool = vk_command_pool,
@@ -622,7 +630,8 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		}
 	}
 
-	VkCommandBuffer onetime_command_buffer; {
+	VkCommandBuffer onetime_command_buffer;
+	{
 		VkCommandBufferAllocateInfo info{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 			.commandPool = vk_command_pool,
@@ -664,7 +673,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 	while (veekay::app.running && !glfwWindowShouldClose(window)) {
 		veekay::input::cache();
-		
+
 		glfwPollEvents();
 		double time = glfwGetTime();
 
@@ -683,8 +692,8 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		// NOTE: Get current swapchain framebuffer index
 		uint32_t swapchain_image_index = 0;
 		vkAcquireNextImageKHR(vk_device, vk_swapchain, UINT64_MAX,
-		                      vk_render_semaphores[vk_current_frame],
-		                      nullptr, &swapchain_image_index);
+							  vk_render_semaphores[vk_current_frame],
+							  nullptr, &swapchain_image_index);
 
 		VkCommandBuffer cmd = vk_command_buffers[swapchain_image_index];
 
@@ -725,7 +734,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		{ // NOTE: Submit commands to graphics queue
 			VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-			VkCommandBuffer buffers[] = { cmd, imgui_cmd };
+			VkCommandBuffer buffers[] = {cmd, imgui_cmd};
 
 			VkSubmitInfo info{
 				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -771,7 +780,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 		vkDestroySemaphore(vk_device, vk_render_semaphores[i], nullptr);
 		vkDestroyFence(vk_device, vk_in_flight_fences[i], nullptr);
 	}
-	
+
 	vkDestroyRenderPass(vk_device, vk_render_pass, nullptr);
 
 	vkDestroyImageView(vk_device, vk_image_depth_view, nullptr);
@@ -792,7 +801,7 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 	ImGui::DestroyContext();
 
 	vkDestroyDescriptorPool(vk_device, imgui_descriptor_pool, nullptr);
-	
+
 	vkDestroySwapchainKHR(vk_device, vk_swapchain, nullptr);
 	vkDestroyDevice(vk_device, nullptr);
 	vkDestroySurfaceKHR(vk_instance, vk_surface, nullptr);
@@ -801,6 +810,6 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
-	
+
 	return 0;
 }
