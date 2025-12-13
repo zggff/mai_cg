@@ -77,6 +77,46 @@ struct Model {
 	// Model(VkDevice device);
 };
 
+veekay::mat4 look_at_matrix(const veekay::vec3 &eye, const veekay::vec3 &target, const veekay::vec3 &world_up) {
+	veekay::vec3 forward = veekay::vec3::normalized(eye - target);
+	veekay::vec3 right = veekay::vec3::normalized(veekay::vec3::cross(world_up, forward));
+	veekay::vec3 up = veekay::vec3::cross(forward, right);
+
+	veekay::mat4 result;
+	result[0][0] = right.x;
+	result[0][1] = up.x;
+	result[0][2] = forward.x;
+	result[0][3] = 0.0f;
+	result[1][0] = right.y;
+	result[1][1] = up.y;
+	result[1][2] = forward.y;
+	result[1][3] = 0.0f;
+	result[2][0] = right.z;
+	result[2][1] = up.z;
+	result[2][2] = forward.z;
+	result[2][3] = 0.0f;
+	result[3][0] = -veekay::vec3::dot(right, eye);
+	result[3][1] = -veekay::vec3::dot(up, eye);
+	result[3][2] = -veekay::vec3::dot(forward, eye);
+	result[3][3] = 1.0f;
+
+	return result;
+}
+
+veekay::mat4 orthographic_matrix(float left, float right, float bottom, float top, float zNear, float zFar) {
+	veekay::mat4 result{};
+	result[0][0] = 2.0f / (right - left);
+	result[1][1] = 2.0f / (bottom - top);
+	result[2][2] = 1.0f / (zNear - zFar);
+	result[3][3] = 1.0f;
+
+	result[3][0] = -(right + left) / (right - left);
+	result[3][1] = -(bottom + top) / (bottom - top);
+	result[3][2] = zNear / (zNear - zFar);
+
+	return result;
+}
+
 struct Camera {
 	constexpr static float default_fov = 60.0f;
 	constexpr static float default_near_plane = 0.01f;
@@ -117,23 +157,11 @@ struct Camera {
 		return view() * projection;
 	}
 
-	veekay::mat4 orthographic_matrix(float left, float right, float bottom, float top, float zNear, float zFar) const {
-		veekay::mat4 result{};
-		result[0][0] = 2.0f / (right - left);
-		result[1][1] = 2.0f / (bottom - top); // Fixed: removed the duplicate assignment
-		result[2][2] = 1.0f / (zNear - zFar);
-		result[3][3] = 1.0f;
-
-		result[3][0] = -(right + left) / (right - left);
-		result[3][1] = -(bottom + top) / (bottom - top);
-		result[3][2] = zNear / (zNear - zFar);
-
-		return result;
-	}
-
-	veekay::mat4 ortho_view_projection(float left, float right, float bottom, float top, float zNear, float zFar) const {
-		auto projection = this->orthographic_matrix(left, right, bottom, top, zNear, zFar);
-		return this->view() * projection;
+	veekay::mat4 ortho_view_projection(float l) const {
+		veekay::mat4 light_view =
+			look_at_matrix(position, position + front() * 10, {0, 1, 0});
+		auto projection = orthographic_matrix(-l, l, -l, l, near_plane, far_plane);
+		return light_view * projection;
 	}
 
 	veekay::vec3 front() const {
@@ -213,10 +241,10 @@ VkSampler missing_texture_sampler;
 std::vector<veekay::graphics::Texture *> textures;
 VkSampler texture_sampler;
 
-VkFormat os_color_image_format;		  // Формат пикселей
-VkImage os_color_image;				  // Объект изображения
-VkDeviceMemory os_color_image_memory; // Память изображения
-VkImageView os_color_image_view;	  // Логическое изображение
+VkFormat os_color_image_format;
+VkImage os_color_image;
+VkDeviceMemory os_color_image_memory;
+VkImageView os_color_image_view;
 
 /* Глубинный компонент изображения */
 VkFormat os_depth_image_format;
@@ -385,46 +413,6 @@ veekay::mat4 Transform::matrix() const {
 	return s * t;
 }
 
-veekay::mat4 look_at_matrix(const veekay::vec3 &eye, const veekay::vec3 &target, const veekay::vec3 &world_up) {
-	veekay::vec3 forward = veekay::vec3::normalized(eye - target);
-	veekay::vec3 right = veekay::vec3::normalized(veekay::vec3::cross(world_up, forward));
-	veekay::vec3 up = veekay::vec3::cross(forward, right);
-
-	veekay::mat4 result;
-	result[0][0] = right.x;
-	result[0][1] = up.x;
-	result[0][2] = forward.x;
-	result[0][3] = 0.0f;
-	result[1][0] = right.y;
-	result[1][1] = up.y;
-	result[1][2] = forward.y;
-	result[1][3] = 0.0f;
-	result[2][0] = right.z;
-	result[2][1] = up.z;
-	result[2][2] = forward.z;
-	result[2][3] = 0.0f;
-	result[3][0] = -veekay::vec3::dot(right, eye);
-	result[3][1] = -veekay::vec3::dot(up, eye);
-	result[3][2] = -veekay::vec3::dot(forward, eye);
-	result[3][3] = 1.0f;
-
-	return result;
-}
-
-veekay::mat4 orthographic_matrix(float left, float right, float bottom, float top, float zNear, float zFar) {
-	veekay::mat4 result{};
-	result[0][0] = 2.0f / (right - left);
-	result[1][1] = 2.0f / (bottom - top);
-	result[2][2] = 1.0f / (zNear - zFar);
-	result[3][3] = 1.0f;
-
-	result[3][0] = -(right + left) / (right - left);
-	result[3][1] = -(bottom + top) / (bottom - top);
-	result[3][2] = zNear / (zNear - zFar);
-
-	return result;
-}
-
 bool useLookAt = true;
 
 float angle = 0;
@@ -487,17 +475,16 @@ void load_textures(VkCommandBuffer cmd, VkDevice &device) {
 	{
 		VkSamplerCreateInfo info{
 			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-			.magFilter = VK_FILTER_LINEAR,				  // Фильтрация если плотность текселей меньше
-			.minFilter = VK_FILTER_LINEAR,				  // Фильтрация если плотность больше
-			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
-			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
+			.magFilter = VK_FILTER_LINEAR,
+			.minFilter = VK_FILTER_LINEAR,
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
 			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.anisotropyEnable = true,	 // Включить анизотропную фильтрацию?
-			.maxAnisotropy = 16.0f,		 // Кол-во сэмплов анизотропной фильтрации
-			.minLod = 0.0f,				 // Минимальный уровень мипа
-			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
+			.anisotropyEnable = true,
+			.maxAnisotropy = 16.0f,
+			.minLod = 0.0f,
+			.maxLod = VK_LOD_CLAMP_NONE,
 		};
 		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
 			std::cerr << "Failed to create Vulkan texture sampler\n";
@@ -623,7 +610,7 @@ void initialize(VkCommandBuffer cmd) {
 	{
 		VkSamplerCreateInfo samplerInfo{
 			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-			.magFilter = VK_FILTER_LINEAR, // линейная фильтрация
+			.magFilter = VK_FILTER_LINEAR,
 			.minFilter = VK_FILTER_LINEAR,
 			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
 			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
@@ -1438,8 +1425,8 @@ void update(double time) {
 	};
 
 	vec3 light_pos_norm = {sin(sun_yaw) * cos(sun_pitch),
-					  sin(sun_pitch),
-					  cos(sun_yaw) * cos(sun_pitch)};
+						   sin(sun_pitch),
+						   cos(sun_yaw) * cos(sun_pitch)};
 
 	auto sun_camera = Camera();
 	sun_camera.position = -light_pos_norm * 20;
@@ -1449,24 +1436,7 @@ void update(double time) {
 	sun_camera.fov = 100;
 	scene_uniforms.sun_direction = sun_camera.front();
 
-	veekay::vec3 light_dir = veekay::vec3::normalized(scene_uniforms.sun_direction);
-	veekay::vec3 light_pos = -light_dir * 20.0f;
-
-	veekay::mat4 light_view = look_at_matrix(light_pos, {0, 0, 0}, {0, 1, 0});
-
-	float ortho_size = 50.0f;
-	float z_near = 1.0f;
-	float z_far = 50.0f;
-
-	// матрица проекции - ортогональная "коробка" 50 на 50
-	// ось Y вниз, так как вулкан
-	veekay::mat4 light_proj = orthographic_matrix(-ortho_size, ortho_size, -ortho_size, ortho_size, z_near, z_far);
-
-	// итоговая матрица света
-	veekay::mat4 light_view_projection = light_view * light_proj;
-
-	scene_uniforms.light_view_projection = sun_camera.ortho_view_projection(-ortho_size, ortho_size, -ortho_size, ortho_size, z_near, z_far);
-	scene_uniforms.light_view_projection = light_view_projection;
+	scene_uniforms.light_view_projection = sun_camera.ortho_view_projection(50);
 
 	{
 		models[4].transform.position = {
@@ -1544,67 +1514,66 @@ void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
 		veekay::app.vk_device, "vkCmdEndRenderingKHR");
 
 	{
-        insertImageBarrier(cmd, shadow_image,
-                           0, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                           VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+		insertImageBarrier(cmd, shadow_image,
+						   0, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+						   VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+						   VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+						   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+						   VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
 
-        VkRenderingAttachmentInfoKHR depthAttachment{};
-        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-        depthAttachment.imageView = shadow_image_view; 
-        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; 
-        depthAttachment.clearValue.depthStencil = {1.0f, 0};
+		VkRenderingAttachmentInfoKHR depthAttachment{};
+		depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+		depthAttachment.imageView = shadow_image_view;
+		depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depthAttachment.clearValue.depthStencil = {1.0f, 0};
 
-        VkRenderingInfoKHR renderingInfo{};
-        renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
-        renderingInfo.renderArea = {{0, 0}, {shadow_map_size, shadow_map_size}};
-        renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = 0;
-        renderingInfo.pDepthAttachment = &depthAttachment;
+		VkRenderingInfoKHR renderingInfo{};
+		renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+		renderingInfo.renderArea = {{0, 0}, {shadow_map_size, shadow_map_size}};
+		renderingInfo.layerCount = 1;
+		renderingInfo.colorAttachmentCount = 0;
+		renderingInfo.pDepthAttachment = &depthAttachment;
 
-        if (vkCmdBeginRenderingKHR) {
-            vkCmdBeginRenderingKHR(cmd, &renderingInfo);
+		if (vkCmdBeginRenderingKHR) {
+			vkCmdBeginRenderingKHR(cmd, &renderingInfo);
 
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline);
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_pipeline);
 
-            VkBuffer current_vertex_buffer = VK_NULL_HANDLE;
-            VkBuffer current_index_buffer = VK_NULL_HANDLE;
-            VkDeviceSize zero_offset = 0;
+			VkBuffer current_vertex_buffer = VK_NULL_HANDLE;
+			VkBuffer current_index_buffer = VK_NULL_HANDLE;
+			VkDeviceSize zero_offset = 0;
 
-            for (const auto& model : models) {
-                const Mesh& mesh = model.mesh;
+			for (const auto &model : models) {
+				const Mesh &mesh = model.mesh;
 
-                if (current_vertex_buffer != mesh.vertex_buffer->buffer) {
-                    current_vertex_buffer = mesh.vertex_buffer->buffer;
-                    vkCmdBindVertexBuffers(cmd, 0, 1, &current_vertex_buffer, &zero_offset);
-                }
-                if (current_index_buffer != mesh.index_buffer->buffer) {
-                    current_index_buffer = mesh.index_buffer->buffer;
-                    vkCmdBindIndexBuffer(cmd, current_index_buffer, zero_offset, VK_INDEX_TYPE_UINT32);
-                }
+				if (current_vertex_buffer != mesh.vertex_buffer->buffer) {
+					current_vertex_buffer = mesh.vertex_buffer->buffer;
+					vkCmdBindVertexBuffers(cmd, 0, 1, &current_vertex_buffer, &zero_offset);
+				}
+				if (current_index_buffer != mesh.index_buffer->buffer) {
+					current_index_buffer = mesh.index_buffer->buffer;
+					vkCmdBindIndexBuffer(cmd, current_index_buffer, zero_offset, VK_INDEX_TYPE_UINT32);
+				}
 
-                ShadowPushConstants push;
-                push.model_matrix = model.transform.matrix();
-                push.light_view_proj = light_VP;
+				ShadowPushConstants push;
+				push.model_matrix = model.transform.matrix();
+				push.light_view_proj = light_VP;
 
+				vkCmdPushConstants(cmd, shadow_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT,
+								   0, sizeof(ShadowPushConstants), &push);
+				vkCmdDrawIndexed(cmd, mesh.indices, 1, 0, 0, 0);
+			}
 
-                vkCmdPushConstants(cmd, shadow_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 
-                                 0, sizeof(ShadowPushConstants), &push);
-                vkCmdDrawIndexed(cmd, mesh.indices, 1, 0, 0, 0);
-            }
+			vkCmdEndRenderingKHR(cmd);
+		}
 
-            vkCmdEndRenderingKHR(cmd);
-        }
-        
-        insertImageBarrier(cmd, shadow_image,
-                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-    }
+		insertImageBarrier(cmd, shadow_image,
+						   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+						   VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+						   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+	}
 
 	{ // NOTE: Use current swapchain framebuffer and clear it
 		VkClearValue clear_color{.color = {{0.1f, 0.1f, 0.1f, 1.0f}}};
